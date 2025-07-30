@@ -7,8 +7,9 @@
     "react-dom": "^18.2.0",
     "react-scripts": "^5.0.1",
     "@react-three/fiber": "^8.13.18",
-    "@react-three/drei": "^9.102.7",
-    "three": "^0.152.2"
+    "@react-three/drei": "^9.109.0",
+    "three": "^0.157.0",
+    "three-mesh-bvh": "^0.7.3"
   },
   "scripts": {
     "start": "react-scripts start",
