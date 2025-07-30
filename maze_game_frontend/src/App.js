@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import "./App.css";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, PerspectiveCamera, Html, SoftShadows } from "@react-three/drei";
-// **Removed unused import of THREE
+// **No BatchedMesh import or usage; confirmed THREE is not used directly**
 
 // Color palette
 const PRIMARY = "#0066cc";
