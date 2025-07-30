@@ -1,5 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import "./App.css";
+import { Canvas } from "@react-three/fiber";
+import { OrbitControls, PerspectiveCamera, Html, SoftShadows } from "@react-three/drei";
+// **Removed unused import of THREE
 
 // Color palette
 const PRIMARY = "#0066cc";
@@ -18,7 +21,7 @@ const DIRS = [
   { name: "left", dr: 0, dc: -1 },
 ];
 
-// Simple maze cell representation
+// Maze cell primitive
 function initMaze(rows, cols) {
   const maze = [];
   for (let r = 0; r < rows; r++) {
@@ -36,19 +39,14 @@ function initMaze(rows, cols) {
   return maze;
 }
 
-/**
- * Recursive Backtracking Maze Generation
- */
+// Recursive Backtracking Maze Generation
 function generateMaze(rows, cols) {
   const maze = initMaze(rows, cols);
   function shuffle(array) {
     let currentIndex = array.length, randomIndex;
-    // While there remain elements to shuffle...
     while (currentIndex !== 0) {
-      // Pick a remaining element...
       randomIndex = Math.floor(Math.random() * currentIndex);
       currentIndex--;
-      // And swap it with the current element.
       [array[currentIndex], array[randomIndex]] = [
         array[randomIndex], array[currentIndex]];
     }
@@ -62,7 +60,6 @@ function generateMaze(rows, cols) {
     shuffle(DIRS).forEach(({ name, dr, dc }) => {
       const nr = r + dr, nc = c + dc;
       if (isValid(nr, nc) && !maze[nr][nc].visited) {
-        // Knock down walls between current and neighbor
         maze[r][c].walls[name] = false;
         const opposite = { top: "bottom", right: "left", bottom: "top", left: "right" };
         maze[nr][nc].walls[opposite[name]] = false;
@@ -70,8 +67,7 @@ function generateMaze(rows, cols) {
       }
     });
   }
-  backtrack(0, 0); // Start at top-left
-  // Unmark visited cells for gameplay
+  backtrack(0, 0);
   for (let r = 0; r < rows; r++)
     for (let c = 0; c < cols; c++)
       maze[r][c].visited = false;
@@ -80,15 +76,15 @@ function generateMaze(rows, cols) {
 
 // PUBLIC_INTERFACE
 /**
- * The main Maze Game App
+ * Main Maze Game 3D App
  */
 function App() {
   // Maze & State
   const [maze, setMaze] = useState(() => generateMaze(MAZE_ROWS, MAZE_COLS));
   const [player, setPlayer] = useState({ r: 0, c: 0 });
   const [gameActive, setGameActive] = useState(false);
-  const [startTime, setStartTime] = useState(null); // ms timestamp
-  const [elapsed, setElapsed] = useState(0); // seconds
+  const [startTime, setStartTime] = useState(null);
+  const [elapsed, setElapsed] = useState(0);
   const [score, setScore] = useState(0);
   const [completed, setCompleted] = useState(false);
 
@@ -152,11 +148,10 @@ function App() {
 
   // Movement & Gameplay
   // PUBLIC_INTERFACE
-  function movePlayer(direction) {
+  const movePlayer = useCallback((direction) => {
     if (!gameActive || completed) return;
     const { r, c } = player;
     const cell = maze[r][c];
-    // Don't move through walls
     if (cell.walls[direction]) return;
     let nr = r, nc = c;
     if (direction === "top") nr--;
@@ -164,27 +159,23 @@ function App() {
     else if (direction === "left") nc--;
     else if (direction === "right") nc++;
     if (nr < 0 || nc < 0 || nr >= MAZE_ROWS || nc >= MAZE_COLS) return;
-    // Step: update score -1 for each move except first
     setPlayer({ r: nr, c: nc });
     setScore(s => s - 1);
-    // If at the goal, finish
     if (nr === MAZE_ROWS - 1 && nc === MAZE_COLS - 1) {
       setGameActive(false);
       setCompleted(true);
       setElapsed(Math.floor((Date.now() - startTime) / 1000));
-      setScore(s => s + 1000); // Winning bonus
+      setScore(s => s + 1000); // Bonus
     }
-  }
+  }, [gameActive, completed, maze, player, startTime]);
 
   // PUBLIC_INTERFACE
   function handleCellClick(row, col) {
-    // Optional: Allow clicking adjacent squares or for mobile w/ on-screen controls.
     const { r, c } = player;
     if (
       (Math.abs(row - r) === 1 && col === c) ||
       (Math.abs(col - c) === 1 && row === r)
     ) {
-      // Determine direction
       let dir = null;
       if (row < r) dir = "top";
       else if (row > r) dir = "bottom";
@@ -194,84 +185,162 @@ function App() {
     }
   }
 
-  // The main maze rendering
-  function MazeGrid() {
+  // 3D Maze rendering with react-three-fiber
+  // Each cell is a floor tile; walls are painted as thin 3D boxes on sides if present; player and goal are spheres with color/animation
+
+  function Maze3DView() {
+    // Block size in 3D units
+    const UNIT = 1.1;
+
+    // Draw maze floor and walls
+    const tiles = [];
+    const walls = [];
+    for (let r = 0; r < MAZE_ROWS; r++) {
+      for (let c = 0; c < MAZE_COLS; c++) {
+        // Floor tile
+        tiles.push(
+          <mesh
+            key={`floor-${r}-${c}`}
+            position={[c * UNIT, 0, r * UNIT]}
+            receiveShadow
+            onClick={() => handleCellClick(r, c)}
+          >
+            <boxGeometry args={[1, 0.1, 1]} />
+            <meshStandardMaterial color={SECONDARY} />
+          </mesh>
+        );
+        // Walls
+        const wallProps = {
+          castShadow: true,
+          receiveShadow: true,
+        };
+        if (maze[r][c].walls.top && r === 0) {
+          walls.push(
+            <mesh
+              key={`wall-t-${r}-${c}`}
+              position={[c * UNIT, 0.3, (r - 0.5) * UNIT]}
+              {...wallProps}
+            >
+              <boxGeometry args={[1, 0.6, 0.1]} />
+              <meshStandardMaterial color={PRIMARY} />
+            </mesh>
+          );
+        }
+        if (maze[r][c].walls.left && c === 0) {
+          walls.push(
+            <mesh
+              key={`wall-l-${r}-${c}`}
+              position={[(c - 0.5) * UNIT, 0.3, r * UNIT]}
+              {...wallProps}
+            >
+              <boxGeometry args={[0.1, 0.6, 1]} />
+              <meshStandardMaterial color={PRIMARY} />
+            </mesh>
+          );
+        }
+        if (maze[r][c].walls.bottom) {
+          walls.push(
+            <mesh
+              key={`wall-b-${r}-${c}`}
+              position={[c * UNIT, 0.3, (r + 0.5) * UNIT]}
+              {...wallProps}
+            >
+              <boxGeometry args={[1, 0.6, 0.13]} />
+              <meshStandardMaterial color={PRIMARY} />
+            </mesh>
+          );
+        }
+        if (maze[r][c].walls.right) {
+          walls.push(
+            <mesh
+              key={`wall-r-${r}-${c}`}
+              position={[(c + 0.5) * UNIT, 0.3, r * UNIT]}
+              {...wallProps}
+            >
+              <boxGeometry args={[0.13, 0.6, 1]} />
+              <meshStandardMaterial color={PRIMARY} />
+            </mesh>
+          );
+        }
+      }
+    }
+
+    // Player and goal 3D markers
+    const playerY = 0.5;
+    const goalY = 0.3;
+    const playerColor = ACCENT;
+    const goalColor = "#95e39c";
+
     return (
-      <div
-        className="maze-grid"
+      <Canvas
         style={{
-          display: "grid",
-          gridTemplateRows: `repeat(${MAZE_ROWS}, 1fr)`,
-          gridTemplateColumns: `repeat(${MAZE_COLS}, 1fr)`,
-          background: SECONDARY,
-          border: `4px solid ${PRIMARY}`,
-          margin: "auto",
-          maxWidth: "98vw",
-          aspectRatio: `${MAZE_COLS} / ${MAZE_ROWS}`,
-          boxShadow: "0 4px 24px 2px rgba(50, 70, 90, 0.10)",
+          width: "100%",
+          height: "min(64vw, 60vh)",
+          minHeight: 300,
+          background: "linear-gradient(180deg, #fff 80%, #e4f1ff 100%)",
+          borderRadius: "10px",
+          boxShadow: "0 4px 28px 3px rgba(20,80,120,0.08)",
         }}
-        tabIndex={-1}
-        aria-label="Maze"
+        shadows
+        dpr={window.devicePixelRatio}
+        camera={{ fov: 62, near: 0.1, far: 100, position: [MAZE_COLS / 2, 13, MAZE_ROWS * 1.10] }}
       >
-        {maze.map((row, r) =>
-          row.map((cell, c) => {
-            // Walls
-            const style = {
-              borderTop: cell.walls.top ? `2px solid ${PRIMARY}` : "2px solid transparent",
-              borderRight: cell.walls.right ? `2px solid ${PRIMARY}` : "2px solid transparent",
-              borderBottom: cell.walls.bottom ? `2px solid ${PRIMARY}` : "2px solid transparent",
-              borderLeft: cell.walls.left ? `2px solid ${PRIMARY}` : "2px solid transparent",
-              background:
-                r === player.r && c === player.c
-                  ? ACCENT
-                  : r === MAZE_ROWS - 1 && c === MAZE_COLS - 1
-                  ? "#C0F7C2"
-                  : SECONDARY,
-              transition: "background 0.12s",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: "bold",
-              fontSize: "clamp(10px, 2vw, 26px)",
-              userSelect: "none",
-              cursor:
-                (Math.abs(r - player.r) === 1 && c === player.c) ||
-                (Math.abs(c - player.c) === 1 && r === player.r)
-                  ? "pointer"
-                  : "default",
-              // Highlight goal cell
-              color: (r === MAZE_ROWS - 1 && c === MAZE_COLS - 1) ? PRIMARY : PRIMARY,
-            };
-            return (
-              <div
-                key={`${r}-${c}`}
-                style={style}
-                className={
-                  "maze-cell" +
-                  (r === player.r && c === player.c
-                    ? " player-cell"
-                    : "") +
-                  (r === MAZE_ROWS - 1 && c === MAZE_COLS - 1 ? " goal-cell" : "")
-                }
-                aria-label={
-                  r === player.r && c === player.c
-                    ? "Player position"
-                    : r === MAZE_ROWS - 1 && c === MAZE_COLS - 1
-                    ? "Maze goal"
-                    : undefined
-                }
-                onClick={() => handleCellClick(r, c)}
-              >
-                {r === player.r && c === player.c ? "🧑‍🚀" : ""}
-                {/* Goal cell */}
-                {r === MAZE_ROWS - 1 && c === MAZE_COLS - 1 && !(r === player.r && c === player.c)
-                  ? "🏁"
-                  : ""}
-              </div>
-            );
-          })
-        )}
-      </div>
+        <color attach="background" args={["#eaf3ff"]} />
+        <PerspectiveCamera
+          makeDefault
+          fov={55}
+          position={[MAZE_COLS / 2, 11.5, MAZE_ROWS * 0.95]}
+        />
+        <SoftShadows size={12} samples={22} focus={0.8} />
+        <ambientLight intensity={0.83} />
+        <directionalLight position={[8, 14, 18]} intensity={1.16} castShadow shadow-mapSize-width={1024}
+          shadow-mapSize-height={1024} shadow-camera-far={50} />
+        {/* Maze Floor */}
+        <group>{tiles}</group>
+        {/* Maze Walls */}
+        <group>{walls}</group>
+
+        {/* Player */}
+        <mesh
+          position={[player.c * UNIT, playerY, player.r * UNIT]}
+          castShadow
+        >
+          <sphereGeometry args={[0.33, 32, 32]} />
+          <meshStandardMaterial color={playerColor} emissive={playerColor} emissiveIntensity={0.23} />
+          {/* Player emoji above sphere as HTML */}
+          <Html position={[0, 0.46, 0]} style={{ userSelect: "none" }}>
+            <span style={{ fontSize: 24, filter: "drop-shadow(0px 1px 2px #fff7)" }}>
+              🧑‍🚀
+            </span>
+          </Html>
+        </mesh>
+        {/* Goal */}
+        <mesh
+          position={[(MAZE_COLS - 1) * UNIT, goalY, (MAZE_ROWS - 1) * UNIT]}
+          castShadow
+        >
+          <sphereGeometry args={[0.29, 28, 28]} />
+          <meshStandardMaterial color={goalColor} emissive={goalColor} emissiveIntensity={0.15} />
+          {/* Goal flag emoji */}
+          <Html position={[0, 0.40, 0]}>
+            <span style={{ fontSize: 22 }}>🏁</span>
+          </Html>
+        </mesh>
+        {/* Soft bottom shadows */}
+        <mesh position={[MAZE_COLS * UNIT / 2 - 0.5 * UNIT, 0, MAZE_ROWS * UNIT / 2 - 0.5 * UNIT]}
+          receiveShadow >
+          <boxGeometry args={[MAZE_COLS * UNIT, 0.05, MAZE_ROWS * UNIT]} />
+          <meshStandardMaterial color="#ecf4ff" />
+        </mesh>
+        {/* Controls */}
+        <OrbitControls
+          maxPolarAngle={Math.PI / 2}
+          minPolarAngle={0.14}
+          target={[MAZE_COLS / 2, 0, MAZE_ROWS / 2]}
+          dampingFactor={0.16}
+          enablePan={false}
+        />
+      </Canvas>
     );
   }
 
@@ -336,10 +405,12 @@ function App() {
                 <li>
                   Each step <b>-1</b> point. Win fast for bonus!
                 </li>
-                <li>Click cells next to yours to move on mobile.</li>
+                <li>Click adjacent tiles to move on mobile.</li>
                 <li>
                   Press <b>New Maze</b> or <b>Reset Position</b> anytime.
                 </li>
+                <li>Rotate camera: drag with mouse.</li>
+                <li>Zoom: pinch or mouse wheel.</li>
               </ul>
               <div style={{ fontSize: 13, marginTop: 8, color: PRIMARY }}>
                 {completed
@@ -388,7 +459,7 @@ function App() {
             alignItems: "center",
           }}
         >
-          <span style={{ marginRight: 13 }}>🧩</span> Maze Challenge
+          <span style={{ marginRight: 13 }}>🧩</span> Maze Challenge 3D
         </div>
         <div>
           <button
@@ -423,7 +494,7 @@ function App() {
     );
   }
 
-  // Responsive Layout
+  // Layout with 3D Maze view in the center
   return (
     <div className="maze-app-layout">
       <Toolbar />
@@ -450,20 +521,21 @@ function App() {
             justifyContent: "center",
             minWidth: 200,
             minHeight: 200,
+            maxWidth: 780,
           }}
         >
-          <MazeGrid />
+          <Maze3DView />
         </div>
         <Sidebar />
       </main>
-      <div style={{height:16}}></div>
+      <div style={{ height: 16 }}></div>
       <footer className="maze-footer" style={{
         textAlign: "center",
         fontSize: 13,
         color: "#8fa9c7",
         padding: "10px 0 6px 0"
       }}>
-        &copy; {new Date().getFullYear()} Maze Game. Made with <span style={{color:ACCENT}}>★</span>
+        &copy; {new Date().getFullYear()} Maze Game. Made in <span style={{ color: ACCENT }}>3D</span>
       </footer>
     </div>
   );
