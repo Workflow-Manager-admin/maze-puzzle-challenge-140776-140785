@@ -1,8 +1,11 @@
-import { render, screen } from '@testing-library/react';
-import App from './App';
+import { render, screen } from "@testing-library/react";
+import App from "./App";
 
-test('renders learn react link', () => {
+test("renders Maze Game UI", () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+  expect(screen.getByText(/Maze Game/i)).toBeInTheDocument();
+  expect(screen.getByText(/Score:/i)).toBeInTheDocument();
+  expect(screen.getByText(/How to Play/i)).toBeInTheDocument();
+  // Player avatar cell
+  expect(screen.getByText("🧑‍🚀")).toBeInTheDocument();
 });
