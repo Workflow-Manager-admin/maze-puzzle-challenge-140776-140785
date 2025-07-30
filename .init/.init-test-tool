@@ -1,0 +1,4 @@
+{
+    "command": "npm run test",
+    "working_directory": "/home/kavia/workspace/code-generation/maze-puzzle-challenge-140776-140785/maze_game_frontend"
+}
